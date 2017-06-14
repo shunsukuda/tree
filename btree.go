@@ -1,42 +1,54 @@
 package main
 
-const (
-	Degree = 4
+import (
+	"io/ioutil"
+	"log"
+	"os"
+	"os/exec"
+	"strconv"
+
+	"github.com/awalterschulze/gographviz"
 )
 
-type node struct {
+const (
+	DEGREE  = 4
+	OUT_DOT = "btree.dot"
+	OUT_PNG = "btree.png"
+)
+
+type BNode struct {
 	n    int
 	leaf bool
 	key  []int
-	c    []*node
+	c    []*BNode
 }
 
-func (x *node) NumKey() int {
+func (x *BNode) NumKey() int {
 	x.n = len(x.key)
 	return x.n
 }
 
-func (n *node) IsLeaf() bool {
+func (n *BNode) IsLeaf() bool {
 	return n.leaf
 }
 
-func (n *node) IsFull() bool {
-	if n.NumKey() >= Degree*2-1 {
+func (n *BNode) IsFull() bool {
+	if n.NumKey() >= DEGREE*2-1 {
 		return true
 	} else {
 		return false
 	}
 }
 
-func (n *node) GetKey(index int) int {
+func (n *BNode) GetKey(index int) int {
 	return n.key[index]
 }
 
-func (n *node) GetChild(index int) *node {
+func (n *BNode) GetChild(index int) *BNode {
 	return n.c[index]
 }
 
-func (x *node) insertionKey(value int, index int) {
+func (x *BNode) insertionKey(value int, index int) {
 	right := make([]int, len(x.key)-index)
 	copy(right, x.key[index:])
 	x.key = x.key[:index]
@@ -44,26 +56,26 @@ func (x *node) insertionKey(value int, index int) {
 	x.key = append(x.key, right...)
 }
 
-func (x *node) insertionChild(value *node, index int) {
-	right := make([]*node, len(x.c)-index)
+func (x *BNode) insertionChild(value *BNode, index int) {
+	right := make([]*BNode, len(x.c)-index)
 	copy(right, x.c[index:])
 	x.c = x.c[:index]
 	x.c = append(x.c, value)
 	x.c = append(x.c, right...)
 }
 
-func (x *node) New() {
+func (x *BNode) Init() {
 	x.n = 0
 	x.leaf = true
-	x.key = make([]int, 0, Degree*2-1)
-	x.c = make([]*node, 0, Degree*2)
+	x.key = make([]int, 0, DEGREE*2-1)
+	x.c = make([]*BNode, 0, DEGREE*2)
 }
 
-func (x node) Get() node {
+func (x BNode) Get() BNode {
 	return x
 }
 
-func (x *node) Seak(key int) (index int, equal bool) {
+func (x *BNode) Seak(key int) (index int, equal bool) {
 	index = x.NumKey()
 	equal = false
 	for i := x.NumKey() - 1; i >= 0; i-- {
@@ -79,7 +91,7 @@ func (x *node) Seak(key int) (index int, equal bool) {
 	return
 }
 
-func (x *node) Search(key int) (*node, int) {
+func (x *BNode) Search(key int) (*BNode, int) {
 	if x.NumKey() == 0 {
 		return nil, 0
 	}
@@ -94,24 +106,24 @@ func (x *node) Search(key int) (*node, int) {
 	}
 }
 
-func (x *node) Split(index int) {
+func (x *BNode) Split(index int) {
 	y := x.GetChild(index)
-	var z node
-	z.New()
-	z.key = y.key[Degree:]
+	var z BNode
+	z.Init()
+	z.key = y.key[DEGREE:]
 	if !x.IsLeaf() {
-		z.c = y.c[Degree:]
+		z.c = y.c[DEGREE:]
 	}
-	x.key[index] = y.key[Degree-1]
+	x.key[index] = y.key[DEGREE-1]
 	x.insertionChild(&z, index+1)
-	y.key = y.key[:Degree-1]
-	y.c = y.c[:Degree]
+	y.key = y.key[:DEGREE-1]
+	y.c = y.c[:DEGREE]
 }
 
-func (t *node) Insert(key int) {
+func (t *BNode) Insert(key int) {
 	if t.IsFull() {
 		x := t.Get()
-		t.New()
+		t.Init()
 		t.leaf = false
 		t.c = append(t.c, &x)
 		t.Split(0)
@@ -119,7 +131,7 @@ func (t *node) Insert(key int) {
 	t.InsertNonFull(key)
 }
 
-func (x *node) InsertNonFull(key int) {
+func (x *BNode) InsertNonFull(key int) {
 	index, _ := x.Seak(key)
 	if x.IsLeaf() {
 		x.insertionKey(key, index)
@@ -131,6 +143,44 @@ func (x *node) InsertNonFull(key int) {
 				index++
 			}
 			x.GetChild(index).InsertNonFull(key)
+		}
+	}
+}
+
+func (t *BNode) PrintRoot() {
+	graphAst, _ := gographviz.ParseString(`digraph G {}`)
+	graph := gographviz.NewGraph()
+	if err := gographviz.Analyse(graphAst, graph); err != nil {
+		log.Fatal(err)
+	}
+	var rootName string = "|"
+	for _, e := range t.key {
+		rootName += strconv.FormatInt(int64(e), 10) + "|"
+	}
+	t.printNode(graph, rootName)
+
+	if err := ioutil.WriteFile("./"+OUT_DOT, []byte(graph.String()), os.ModePerm); err != nil {
+		log.Print("Dot File Write Error")
+		log.Fatal(err)
+	}
+	if err := exec.Command("dot", "-Tpng", OUT_DOT, "-o", OUT_PNG).Run(); err != nil {
+		log.Print("Dot Command Error")
+		log.Fatal(err)
+	}
+}
+
+func (x *BNode) printNode(graph *gographviz.Graph, parentName string) {
+	var nodeName string = "|"
+	for _, e := range t.key {
+		nodeName += strconv.FormatInt(int64(e), 10) + "|"
+	}
+	graph.AddNode("G", nodeName, nil)
+	if parentName != nodeName {
+		graph.AddEdge(parentName, nodeName, true, nil)
+	}
+	for _, e := range x.c {
+		if e != nil {
+			e.printNode(graph, nodeName)
 		}
 	}
 }

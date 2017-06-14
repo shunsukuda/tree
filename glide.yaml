@@ -4,3 +4,5 @@ import:
   version: ^3.1.0
   subpackages:
   - '...'
+- package: github.com/awalterschulze/gographviz
+  version: ^2.0.0
